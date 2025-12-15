@@ -1,17 +1,21 @@
 // screens/SportFritid/PreviousScreen.js
-import React from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet } from 'react-native';
-import { g, colors } from '../../styles/styles';
-import { useBookings } from '../../store/bookings';
-import BottomBar from '../../components/BottomBar';
+import React from "react";
+import { View, Text, FlatList, Pressable, StyleSheet, Alert } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+import { g, colors } from "../../styles/styles";
+import BottomBar from "../../components/BottomBar";
+
+import { ensureSignedIn } from "../../services/auth";
+import { useBookings } from "../../store/bookings";
+import { deleteMyBooking, clearMyBookings } from "../../services/bookings";
 
 const fmt = (iso, time) => {
   try {
     const d = new Date(iso);
-    const dStr = d.toLocaleDateString('da-DK', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
+    const dStr = d.toLocaleDateString("da-DK", {
+      weekday: "short",
+      day: "numeric",
+      month: "short",
     });
     return `${dStr} kl. ${time}`;
   } catch {
@@ -20,9 +24,62 @@ const fmt = (iso, time) => {
 };
 
 export default function PreviousScreen({ navigation }) {
-  const { bookings, remove, clear, ready } = useBookings();
+  const { bookings, ready, loadingRemote, refreshFromRemote, removeLocal, clearLocal } = useBookings();
 
-  if (!ready) {
+  const load = async () => {
+    await ensureSignedIn();
+    await refreshFromRemote();
+  };
+
+  useFocusEffect(
+    React.useCallback(() => {
+      load();
+    }, [])
+  );
+
+  const onDeleteOne = (id) => {
+    Alert.alert("Slet booking", "Er du sikker?", [
+      { text: "Annuller", style: "cancel" },
+      {
+        text: "Slet",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteMyBooking(id);
+            removeLocal(id); // UI instant
+          } catch (e) {
+            Alert.alert("Fejl", e?.message || "Kunne ikke slette booking.");
+          } finally {
+            await refreshFromRemote(); // hold UI i sync
+          }
+        },
+      },
+    ]);
+  };
+
+  const onClearAll = () => {
+    if (!bookings || bookings.length === 0) return;
+
+    Alert.alert("Ryd alle", "Vil du slette alle dine bookinger?", [
+      { text: "Annuller", style: "cancel" },
+      {
+        text: "Ryd alle",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await clearMyBookings();
+            clearLocal(); // UI instant
+          } catch (e) {
+            Alert.alert("Fejl", e?.message || "Kunne ikke rydde bookinger.");
+          } finally {
+            await refreshFromRemote();
+          }
+        },
+      },
+    ]);
+  };
+
+  if (!ready || loadingRemote) {
     return (
       <View style={[g.screen, g.center]}>
         <Text style={{ color: colors.text }}>Indlæser…</Text>
@@ -34,7 +91,7 @@ export default function PreviousScreen({ navigation }) {
     <View style={[g.screen, g.screenWithBar]}>
       <Text style={g.title}>Mine bookinger</Text>
 
-      {bookings.length === 0 ? (
+      {!bookings || bookings.length === 0 ? (
         <View style={[g.card, g.center]}>
           <Text style={{ color: colors.textMuted }}>Ingen bookinger endnu.</Text>
         </View>
@@ -45,34 +102,36 @@ export default function PreviousScreen({ navigation }) {
             keyExtractor={(b) => b.id}
             contentContainerStyle={s.pb80}
             ItemSeparatorComponent={() => <View style={g.divider} />}
-            renderItem={({ item }) => (
-              <View style={g.card}>
-                <View style={g.rowBetween}>
-                  <Text style={[g.text, g.semibold]}>{item.venueName}</Text>
-                  <Text style={[g.text, s.price]}>{item.price} kr./t</Text>
-                </View>
+            renderItem={({ item }) => {
+              const price = item?.pricePerHour ?? item?.price ?? 0;
 
-                <Text style={{ color: colors.textMuted }}>{item.city}</Text>
-                <Text style={[{ color: colors.text }, s.mt8]}>
-                  {fmt(item.dateISO, item.time)}
-                </Text>
+              return (
+                <View style={g.card}>
+                  <View style={g.rowBetween}>
+                    <Text style={[g.text, s.bold]}>{item.venueName || "Venue"}</Text>
 
-                <View style={[g.rowBetween, s.mt10]}>
-                  <Pressable
-                    onPress={() => remove(item.id)}
-                    hitSlop={10}
-                    style={s.linkHit}
-                  >
-                    <Text style={s.linkDanger}>Slet</Text>
-                  </Pressable>
-                  {/* plads til “Del” eller “Se kvittering” senere */}
-                  <View />
+                    {/* force lys farve her */}
+                    <Text style={s.price}>{price} kr./t</Text>
+                  </View>
+
+                  <Text style={{ color: colors.textMuted }}>{item.city || "—"}</Text>
+
+                  <Text style={[{ color: colors.text }, s.mt8]}>
+                    {fmt(item.dateISO, item.time)}
+                  </Text>
+
+                  <View style={[g.rowBetween, s.mt10]}>
+                    <Pressable onPress={() => onDeleteOne(item.id)} hitSlop={10} style={s.linkHit}>
+                      <Text style={s.linkDanger}>Slet</Text>
+                    </Pressable>
+                    <View />
+                  </View>
                 </View>
-              </View>
-            )}
+              );
+            }}
           />
 
-          <Pressable onPress={clear} hitSlop={10} style={s.clearAll}>
+          <Pressable onPress={onClearAll} hitSlop={10} style={s.clearAll}>
             <Text style={s.linkMuted}>Ryd alle</Text>
           </Pressable>
         </>
@@ -84,14 +143,14 @@ export default function PreviousScreen({ navigation }) {
 }
 
 const s = StyleSheet.create({
-  price: { fontWeight: '700', color: colors.text },
+  bold: { fontWeight: "800" },
+  price: { fontWeight: "800", color: colors.text },
   mt8: { marginTop: 8 },
   mt10: { marginTop: 10 },
   pb80: { paddingBottom: 80 },
-  clearAll: { alignSelf: 'center', marginTop: 6 },
+  clearAll: { alignSelf: "center", marginTop: 6 },
   linkHit: { paddingVertical: 4, paddingHorizontal: 2 },
-
-  // “Link”-farver så de er tydelige på mørk baggrund
-  linkDanger: { color: colors.danger, fontWeight: '700' },
-  linkMuted: { color: colors.textMuted, fontWeight: '700' },
+  linkDanger: { color: colors.danger, fontWeight: "800" },
+  linkMuted: { color: colors.textMuted, fontWeight: "800" },
 });
+

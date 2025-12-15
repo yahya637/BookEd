@@ -1,12 +1,15 @@
 // screens/SportFritid/BookingScreen.js
-import React, { useMemo, useState } from 'react';
-import { View, Text, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { CommonActions } from '@react-navigation/native';
-import { g, colors } from '../../styles/styles';
-import { getVenueById } from '../../data/venues';
-import { useBookings } from '../../store/bookings';
-import PrimaryButton from '../../components/PrimaryButton';
-import ProgressSteps from '../../components/ProgressSteps';
+import React, { useMemo, useState } from "react";
+import { View, Text, Pressable, ScrollView, StyleSheet, Alert } from "react-native";
+import { CommonActions } from "@react-navigation/native";
+import { g, colors } from "../../styles/styles";
+import { getVenueById } from "../../data/venues";
+import { useBookings } from "../../store/bookings";
+import PrimaryButton from "../../components/PrimaryButton";
+import ProgressSteps from "../../components/ProgressSteps";
+
+import { ensureSignedIn } from "../../services/auth";
+import { createBooking } from "../../services/bookings";
 
 /* Helpers */
 const daysAhead = 14;
@@ -31,7 +34,7 @@ const isSameDay = (a, b) =>
 const slotIsPastToday = (date, slotHHMM) => {
   const now = new Date();
   if (!isSameDay(date, now)) return false;
-  const [hh, mm] = (slotHHMM || '00:00').split(':').map(Number);
+  const [hh, mm] = (slotHHMM || "00:00").split(":").map(Number);
   const slotDate = new Date(date);
   slotDate.setHours(hh, mm, 0, 0);
   return slotDate.getTime() <= now.getTime();
@@ -43,6 +46,8 @@ export default function BookingScreen({ route, navigation }) {
 
   const [selectedDate, setSelectedDate] = useState(getNextDays(daysAhead)[0]);
   const [slot, setSlot] = useState(null);
+  const [saving, setSaving] = useState(false);
+
   const { add } = useBookings();
 
   if (!venue) {
@@ -54,29 +59,55 @@ export default function BookingScreen({ route, navigation }) {
   }
 
   const days = getNextDays(daysAhead);
-  const visibleSlots = (venue.slots || []).filter(
-    (s) => !slotIsPastToday(selectedDate, s)
-  );
+  const visibleSlots = (venue.slots || []).filter((s) => !slotIsPastToday(selectedDate, s));
 
-  const confirm = () => {
+  const confirm = async () => {
     if (!slot || !selectedDate) return;
-    const iso = selectedDate.toISOString().slice(0, 10); // YYYY-MM-DD
-    add({
-      id: `${venue.id}-${Date.now()}`,
+
+    try {
+      setSaving(true);
+
+      // sikre at vi har en user (anonym eller email)
+      await ensureSignedIn();
+
+      const iso = selectedDate.toISOString().slice(0, 10); // YYYY-MM-DD
+
+      // 1) Gem i Firestore
+     const created = await createBooking({
       venueId: venue.id,
       venueName: venue.name,
       city: venue.city,
-      price: venue.pricePerHour,
+      pricePerHour: venue.pricePerHour,
       dateISO: iso,
       time: slot,
-    });
-    const root = navigation.getParent?.();
-    root?.dispatch(
-      CommonActions.reset({
-        index: 0,
-        routes: [{ name: 'TabBookings' }],
-      })
-    );
+      });
+ 
+
+      // 2) Gem lokalt også (så Previous/Profile stadig virker indtil vi flytter dem)
+      add({
+        id: created.id, // brug Firestore id
+        venueId: venue.id,
+        venueName: venue.name,
+        city: venue.city,
+        pricePerHour: venue.pricePerHour,
+        dateISO: iso,
+        time: slot,
+      });
+
+      Alert.alert("Booked!", "Din booking er gemt.");
+
+      const root = navigation.getParent?.();
+      root?.dispatch(
+        CommonActions.reset({
+          index: 0,
+          routes: [{ name: "TabBookings" }],
+        })
+      );
+    } catch (e) {
+      Alert.alert("Fejl", e?.message || "Kunne ikke gemme booking.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -96,10 +127,10 @@ export default function BookingScreen({ route, navigation }) {
         >
           {days.map((d) => {
             const focused = isSameDay(d, selectedDate);
-            const label = d.toLocaleDateString('da-DK', {
-              weekday: 'short',
-              day: 'numeric',
-              month: 'short',
+            const label = d.toLocaleDateString("da-DK", {
+              weekday: "short",
+              day: "numeric",
+              month: "short",
             });
             return (
               <Pressable
@@ -122,7 +153,7 @@ export default function BookingScreen({ route, navigation }) {
       {/* Tider */}
       <View style={[g.card, { marginTop: 12 }]}>
         <Text style={styles.heading}>Tilgængelige tider</Text>
-        <View style={[g.row, { flexWrap: 'wrap' }]}>
+        <View style={[g.row, { flexWrap: "wrap" }]}>
           {visibleSlots.length === 0 ? (
             <Text style={g.muted}>Ingen ledige tider på denne dato.</Text>
           ) : (
@@ -132,14 +163,9 @@ export default function BookingScreen({ route, navigation }) {
                 <Pressable
                   key={s}
                   onPress={() => setSlot(s)}
-                  style={[
-                    styles.timeChip,
-                    focused ? styles.timeChipActive : styles.timeChipIdle,
-                  ]}
+                  style={[styles.timeChip, focused ? styles.timeChipActive : styles.timeChipIdle]}
                 >
-                  <Text
-                    style={[styles.timeText, focused && styles.timeTextActive]}
-                  >
+                  <Text style={[styles.timeText, focused && styles.timeTextActive]}>
                     {s}
                   </Text>
                 </Pressable>
@@ -150,11 +176,10 @@ export default function BookingScreen({ route, navigation }) {
       </View>
 
       <PrimaryButton
-        title="Bekræft booking"
+        title={saving ? "Gemmer..." : "Bekræft booking"}
         onPress={confirm}
-        // hvis din PrimaryButton bruger mørk tekst, kan du tvinge hvid her:
-        // textStyle={{ color: '#fff' }}
-        style={{ marginTop: 16 }}
+        style={{ marginTop: 16, opacity: !slot || saving ? 0.6 : 1 }}
+        disabled={!slot || saving}
       />
     </View>
   );
@@ -162,12 +187,11 @@ export default function BookingScreen({ route, navigation }) {
 
 const styles = StyleSheet.create({
   heading: {
-    fontWeight: '700',
+    fontWeight: "700",
     marginBottom: 8,
-    color: colors.text,           // ← vigtig: tydelig på mørk baggrund
+    color: colors.text,
   },
 
-  // Dato-chips
   chip: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
@@ -183,14 +207,13 @@ const styles = StyleSheet.create({
   },
   chipIdle: {},
   chipText: {
-    color: colors.text,           // lys tekst på mørk chip
-    fontWeight: '700',
+    color: colors.text,
+    fontWeight: "700",
   },
   chipTextActive: {
-    color: '#fff',                // hvid tekst på grøn chip
+    color: "#fff",
   },
 
-  // Tid-chips
   timeChip: {
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
@@ -207,11 +230,12 @@ const styles = StyleSheet.create({
   },
   timeChipIdle: {},
   timeText: {
-    color: colors.text,           // ← manglede før (var sort / default)
-    fontWeight: '700',
+    color: colors.text,
+    fontWeight: "700",
   },
   timeTextActive: {
-    color: '#fff',                // ← manglede før
-    fontWeight: '800',
+    color: "#fff",
+    fontWeight: "800",
   },
 });
+

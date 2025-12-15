@@ -15,20 +15,19 @@ const firebaseConfig = {
   storageBucket: "sport-app-a0e45.firebasestorage.app",
   messagingSenderId: "864793958712",
   appId: "1:864793958712:web:036911db8e00a3081b09cd",
-  measurementId: "G-6KCW90260P"
+  measurementId: "G-6KCW90260P",
 };
-
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
-// Safe auth init for React Native (avoid "already initialized" crashes)
+// VIGTIGT: initializeAuth først (med persistence). Hvis den allerede findes, brug getAuth.
 let auth;
 try {
-  auth = getAuth(app);
-} catch (e) {
   auth = initializeAuth(app, {
     persistence: getReactNativePersistence(ReactNativeAsyncStorage),
   });
+} catch (e) {
+  auth = getAuth(app);
 }
 
 export { auth };

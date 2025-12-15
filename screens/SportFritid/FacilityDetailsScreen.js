@@ -1,25 +1,25 @@
 // screens/SportFritid/FacilityDetailsScreen.js
-import React, { useEffect, useMemo, useState, useLayoutEffect } from 'react';
-import { View, Text, FlatList, StyleSheet } from 'react-native';
-import { Image } from 'expo-image';
-import * as Location from 'expo-location';
+import React, { useEffect, useMemo, useState, useLayoutEffect } from "react";
+import { View, Text, FlatList, StyleSheet } from "react-native";
+import { Image } from "expo-image";
+import * as Location from "expo-location";
 
-import { g, colors } from '../../styles/styles';
-import PrimaryButton from '../../components/PrimaryButton';
-import ProgressSteps from '../../components/ProgressSteps';
-import FilterBar from '../../components/FilterBar';
-import { getVenuesBySport, sortByDistance, distanceFromUser } from '../../data/venues';
-import { useFilters } from '../../store/filters';
-import { SPORTS } from '../../data/sports';
+import { g, colors } from "../../styles/styles";
+import PrimaryButton from "../../components/PrimaryButton";
+import ProgressSteps from "../../components/ProgressSteps";
+import FilterBar from "../../components/FilterBar";
+import { getVenuesBySport, sortByDistance, distanceFromUser } from "../../data/venues";
+import { useFilters } from "../../store/filters";
+import { SPORTS } from "../../data/sports";
 
-const BLURHASH = 'L5H2EC=PM+yV0g-mq.wG9c010J}I';
+const BLURHASH = "L5H2EC=PM+yV0g-mq.wG9c010J}I";
 
 export default function FacilityDetailsScreen({ route, navigation }) {
   const { sportId } = route.params || {};
   const [user, setUser] = useState(null);
   const { state: filters } = useFilters();
 
-  const sportName = SPORTS.find(s => s.id === sportId)?.name || '—';
+  const sportName = SPORTS.find((s) => s.id === sportId)?.name || "—";
   useLayoutEffect(() => {
     navigation.setOptions({ title: `Vælg bane · ${sportName}` });
   }, [navigation, sportName]);
@@ -28,7 +28,7 @@ export default function FacilityDetailsScreen({ route, navigation }) {
     (async () => {
       try {
         const { status } = await Location.requestForegroundPermissionsAsync();
-        if (status !== 'granted') return;
+        if (status !== "granted") return;
         const pos = await Location.getCurrentPositionAsync({});
         setUser({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
       } catch {}
@@ -37,17 +37,16 @@ export default function FacilityDetailsScreen({ route, navigation }) {
 
   const base = useMemo(() => getVenuesBySport(sportId), [sportId]);
 
-  // Prefetch evt. netværksbilleder
   useEffect(() => {
-    base.forEach(v => {
-      if (typeof v.image === 'string') Image.prefetch(v.image);
+    base.forEach((v) => {
+      if (typeof v.image === "string") Image.prefetch(v.image);
     });
   }, [base]);
 
   const baseSorted = useMemo(() => sortByDistance(base, user), [base, user]);
 
   const filtered = useMemo(() => {
-    return baseSorted.filter(v => {
+    return baseSorted.filter((v) => {
       if (filters.maxPrice !== null && v.pricePerHour > filters.maxPrice) return false;
       if (filters.maxDistanceKm !== null && user) {
         const d = distanceFromUser(v, user);
@@ -59,7 +58,7 @@ export default function FacilityDetailsScreen({ route, navigation }) {
   }, [baseSorted, filters, user]);
 
   const venues = useMemo(() => {
-    if (filters.sortBy === 'price') return [...filtered].sort((a, b) => a.pricePerHour - b.pricePerHour);
+    if (filters.sortBy === "price") return [...filtered].sort((a, b) => a.pricePerHour - b.pricePerHour);
     return filtered;
   }, [filtered, filters.sortBy]);
 
@@ -79,7 +78,7 @@ export default function FacilityDetailsScreen({ route, navigation }) {
         removeClippedSubviews
         renderItem={({ item }) => {
           const dist = user ? distanceFromUser(item, user) : null;
-          const imgSource = typeof item.image === 'string' ? { uri: item.image } : item.image;
+          const imgSource = typeof item.image === "string" ? { uri: item.image } : item.image;
 
           return (
             <View style={g.card}>
@@ -94,22 +93,25 @@ export default function FacilityDetailsScreen({ route, navigation }) {
               />
 
               <Text style={g.venueTitle}>{item.name}</Text>
+
               <Text style={g.venueMeta}>
-                {item.city}{dist !== null ? ` • ${dist} km` : ''}
+                {item.city}
+                {dist !== null ? ` • ${dist} km` : ""}
               </Text>
-              <Text style={{ marginTop: 4 }}>{item.pricePerHour} kr./t</Text>
+
+              {/* FIX: pris-tekst farve */}
+              <Text style={styles.priceText}>{item.pricePerHour} kr./t</Text>
 
               <View style={[g.row, { marginTop: 10 }]}>
                 <PrimaryButton
                   title="Vælg tid"
-                  onPress={() => navigation.navigate('Booking', { venueId: item.id, sportId })}
+                  onPress={() => navigation.navigate("Booking", { venueId: item.id, sportId })}
                   style={{ flex: 1, marginRight: 8 }}
                 />
 
-                {/* KONTRASTERET “Se kort” (outline) */}
                 <PrimaryButton
                   title="Se kort"
-                  onPress={() => navigation.navigate('Map', { focusVenueId: item.id })}
+                  onPress={() => navigation.navigate("Map", { focusVenueId: item.id })}
                   style={[styles.mapBtn, { flex: 1 }]}
                   textStyle={styles.mapBtnText}
                 />
@@ -118,7 +120,7 @@ export default function FacilityDetailsScreen({ route, navigation }) {
           );
         }}
         ListEmptyComponent={
-          <View style={[g.card, { alignItems: 'center' }]}>
+          <View style={[g.card, { alignItems: "center" }]}>
             <Text style={{ color: colors.textMuted }}>Ingen venues matcher dine filtre.</Text>
           </View>
         }
@@ -128,19 +130,25 @@ export default function FacilityDetailsScreen({ route, navigation }) {
 }
 
 const styles = StyleSheet.create({
-  // Tydelig outline-knap på mørk baggrund
+  priceText: {
+    marginTop: 4,
+    color: colors.text,
+    fontWeight: "700",
+  },
+
   mapBtn: {
     height: 48,
     borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'transparent',
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
     borderWidth: 1.5,
     borderColor: colors.primary,
   },
   mapBtnText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: "700",
     color: colors.primary,
   },
 });
+

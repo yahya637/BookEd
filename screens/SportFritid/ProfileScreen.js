@@ -5,21 +5,27 @@ import { useFocusEffect } from "@react-navigation/native";
 import { g } from "../../styles/styles";
 import BottomBar from "../../components/BottomBar";
 import PrimaryButton from "../../components/PrimaryButton";
+
 import { useBookings } from "../../store/bookings";
 import { SPORTS, SPORT_IMAGES } from "../../data/sports";
 import { getVenueById } from "../../data/venues";
 
 import { ensureSignedIn, logout } from "../../services/auth";
 import { ensureProfile, getMyProfile } from "../../services/profile";
+import { clearMyBookings } from "../../services/bookings";
 import { auth } from "../../firebase";
 
 export default function ProfileScreen({ navigation }) {
-  const { bookings = [], clear } = useBookings();
+  const {
+    bookings = [],
+    refreshFromRemote,
+    clearLocal,
+  } = useBookings();
 
   const [profile, setProfile] = useState(null);
   const [memberSince, setMemberSince] = useState(null);
 
-  const loadProfile = async () => {
+  const loadAll = async () => {
     await ensureSignedIn();
     await ensureProfile();
 
@@ -28,18 +34,21 @@ export default function ProfileScreen({ navigation }) {
 
     const createdAt = p?.createdAt?.toDate ? p.createdAt.toDate() : null;
     setMemberSince(createdAt ? createdAt.toLocaleDateString("da-DK") : null);
+
+    // hold bookings i sync med den aktuelle user
+    await refreshFromRemote();
   };
 
   useFocusEffect(
     React.useCallback(() => {
-      loadProfile();
+      loadAll();
     }, [])
   );
 
-  const sportName = (id) => SPORTS.find((s) => s.id === id)?.name || "Ukendt";
+  const sportName = (id) => SPORTS.find((s) => s.id === id)?.name || "Sport";
   const venuePrice = (venueId) => getVenueById(venueId)?.pricePerHour ?? 0;
   const toDate = (b) =>
-    new Date(`${b?.date ?? "2100-01-01"}T${b?.time ?? "00:00"}:00`);
+    new Date(`${b?.dateISO ?? "2100-01-01"}T${b?.time ?? "00:00"}:00`);
 
   const { totalCount, hoursBooked, totalSpent, upcomingCount, recent5 } =
     useMemo(() => {
@@ -51,7 +60,7 @@ export default function ProfileScreen({ navigation }) {
       let upcomingCount = 0;
 
       bookings.forEach((b) => {
-        const p = b?.pricePerHour ?? venuePrice(b?.venueId);
+        const p = b?.pricePerHour ?? b?.price ?? venuePrice(b?.venueId);
         totalSpent += Number.isFinite(p) ? p : 0;
 
         const d = toDate(b);
@@ -66,9 +75,28 @@ export default function ProfileScreen({ navigation }) {
     }, [bookings]);
 
   const handleClear = () => {
+    if (!bookings || bookings.length === 0) return;
+
     Alert.alert("Ryd alle bookinger", "Er du sikker?", [
       { text: "Annuller", style: "cancel" },
-      { text: "Ryd", style: "destructive", onPress: () => clear() },
+      {
+        text: "Ryd",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            // 1) slet i Firestore
+            await clearMyBookings();
+
+            // 2) ryd UI med det samme
+            clearLocal();
+
+            // 3) sync igen (så alt matcher)
+            await refreshFromRemote();
+          } catch (e) {
+            Alert.alert("Fejl", e?.message || "Kunne ikke rydde bookinger.");
+          }
+        },
+      },
     ]);
   };
 
@@ -91,8 +119,12 @@ export default function ProfileScreen({ navigation }) {
         style: "destructive",
         onPress: async () => {
           await logout();
-          // Efter logout laver ensureSignedIn en ny anonym user igen
-          await loadProfile();
+
+          // ryd UI state så du ikke ser gamle bookings efter logout
+          clearLocal();
+
+          // lav ny anonym user + reload alt
+          await loadAll();
         },
       },
     ]);
@@ -121,7 +153,6 @@ export default function ProfileScreen({ navigation }) {
           {memberSince || "—"}
         </Text>
 
-        {/* Knapper */}
         <View style={[g.rowBetween, { marginTop: 10 }]}>
           <PrimaryButton
             title="Rediger profil"
@@ -172,28 +203,31 @@ export default function ProfileScreen({ navigation }) {
         ) : (
           <FlatList
             data={recent5}
-            keyExtractor={(item, idx) =>
-              item?.id || `${item?.venueId}-${item?.date}-${item?.time}-${idx}`
-            }
+            keyExtractor={(item, idx) => item?.id || `${idx}`}
             renderItem={({ item }) => {
               const venue = getVenueById(item?.venueId);
-              const sName = sportName(item?.sportId);
-              const price = item?.pricePerHour ?? venuePrice(item?.venueId);
+              const price = item?.pricePerHour ?? item?.price ?? venuePrice(item?.venueId);
+
+              // sportId kan være null i jeres model lige nu, så fallback
+              const sName = item?.sportId ? sportName(item.sportId) : "Sport";
               const img =
-                typeof SPORT_IMAGES[item?.sportId] === "string"
-                  ? { uri: SPORT_IMAGES[item?.sportId] }
-                  : SPORT_IMAGES[item?.sportId];
+                item?.sportId && SPORT_IMAGES[item?.sportId]
+                  ? typeof SPORT_IMAGES[item?.sportId] === "string"
+                    ? { uri: SPORT_IMAGES[item?.sportId] }
+                    : SPORT_IMAGES[item?.sportId]
+                  : null;
 
               return (
                 <View style={g.listItem}>
-                  <Image source={img} style={g.listThumb} />
+                  {img ? <Image source={img} style={g.listThumb} /> : <View style={[g.listThumb, { backgroundColor: "#111827" }]} />}
+
                   <View style={{ flex: 1 }}>
-                    <Text style={g.listTitle}>{venue?.name || "Ukendt venue"}</Text>
+                    <Text style={g.listTitle}>{item?.venueName || venue?.name || "Ukendt venue"}</Text>
                     <Text style={g.listSubtitle}>
-                      {sName} • {item?.date || "—"}
-                      {item?.time ? ` • ${item.time}` : ""}
+                      {sName} • {item?.dateISO || "—"}{item?.time ? ` • ${item.time}` : ""}
                     </Text>
                   </View>
+
                   <Text style={g.listPrice}>
                     {Number.isFinite(price) ? price : 0} kr
                   </Text>
@@ -205,7 +239,6 @@ export default function ProfileScreen({ navigation }) {
         )}
       </View>
 
-      {/* Handling */}
       <View style={[g.rowBetween, { marginTop: 8 }]}>
         <PrimaryButton
           title="Ryd alle"
