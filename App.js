@@ -12,6 +12,8 @@ import PreviousScreen from './screens/SportFritid/PreviousScreen';
 import ProfileScreen from './screens/SportFritid/ProfileScreen';
 import MapScreen from './screens/SportFritid/MapScreen';
 import EditProfileScreen from './screens/SportFritid/EditProfileScreen';
+import AuthScreen from './screens/SportFritid/AuthScreen';
+
 
 import { BookingsProvider } from './store/bookings';
 import { FiltersProvider } from './store/filters';
@@ -64,6 +66,7 @@ function ProfileStack() {
   return (
     <Stack.Navigator>
       <Stack.Screen name="Profile" component={ProfileScreen} options={{ title: 'Profil' }} />
+      <Stack.Screen name="Auth" component={AuthScreen} options={{ title: 'Login' }} />
       <Stack.Screen
         name="EditProfile"
         component={EditProfileScreen}

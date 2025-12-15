@@ -1,14 +1,15 @@
-// screens/SportFritid/ProfileScreen.js
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import { View, Text, FlatList, Image, Alert } from "react-native";
+import { useFocusEffect } from "@react-navigation/native";
+
 import { g } from "../../styles/styles";
 import BottomBar from "../../components/BottomBar";
 import PrimaryButton from "../../components/PrimaryButton";
 import { useBookings } from "../../store/bookings";
 import { SPORTS, SPORT_IMAGES } from "../../data/sports";
 import { getVenueById } from "../../data/venues";
-import { useFocusEffect } from "@react-navigation/native";
-import { ensureSignedIn } from "../../services/auth";
+
+import { ensureSignedIn, logout } from "../../services/auth";
 import { ensureProfile, getMyProfile } from "../../services/profile";
 import { auth } from "../../firebase";
 
@@ -29,11 +30,11 @@ export default function ProfileScreen({ navigation }) {
     setMemberSince(createdAt ? createdAt.toLocaleDateString("da-DK") : null);
   };
 
-useFocusEffect(
-  React.useCallback(() => {
-    loadProfile();
-  }, [])
-);
+  useFocusEffect(
+    React.useCallback(() => {
+      loadProfile();
+    }, [])
+  );
 
   const sportName = (id) => SPORTS.find((s) => s.id === id)?.name || "Ukendt";
   const venuePrice = (venueId) => getVenueById(venueId)?.pricePerHour ?? 0;
@@ -71,51 +72,79 @@ useFocusEffect(
     ]);
   };
 
+  const user = auth.currentUser;
+  const isAnonymous = !!user?.isAnonymous;
+
   const displayName = profile?.displayName || "Bruger";
-  const email = profile?.email || auth.currentUser?.email || "";
+  const email = profile?.email || user?.email || "";
+
+  const handleAuthButton = async () => {
+    if (isAnonymous) {
+      navigation.navigate("Auth");
+      return;
+    }
+
+    Alert.alert("Log ud", "Vil du logge ud?", [
+      { text: "Annuller", style: "cancel" },
+      {
+        text: "Log ud",
+        style: "destructive",
+        onPress: async () => {
+          await logout();
+          // Efter logout laver ensureSignedIn en ny anonym user igen
+          await loadProfile();
+        },
+      },
+    ]);
+  };
 
   return (
     <View style={[g.screen, g.screenWithBar]}>
       <Text style={g.title}>Min profil</Text>
 
+      {/* Brugeroplysninger */}
       <View style={g.card}>
         <Text style={g.h2}>Bruger</Text>
+
         <Text style={g.text}>
           <Text style={g.semibold}>Navn: </Text>
           {displayName}
         </Text>
+
         <Text style={g.text}>
           <Text style={g.semibold}>Email: </Text>
           {email || "Ingen (anonym)"}
         </Text>
+
         <Text style={g.text}>
           <Text style={g.semibold}>Medlem siden: </Text>
           {memberSince || "—"}
         </Text>
 
-        <View style={[g.rowBetween, { marginTop: 8 }]}>
+        {/* Knapper */}
+        <View style={[g.rowBetween, { marginTop: 10 }]}>
           <PrimaryButton
             title="Rediger profil"
             onPress={() => navigation.navigate("EditProfile")}
             style={[g.btn, { flex: 1, marginRight: 8 }]}
           />
           <PrimaryButton
-            title="Notifikationer"
-            onPress={() => Alert.alert("Ikke klar", "Notifikationer kommer senere.")}
-            style={[g.btn, { flex: 1, backgroundColor: "#0b2940", borderWidth: 1 }]}
+            title={isAnonymous ? "Login / Opret" : "Log ud"}
+            onPress={handleAuthButton}
+            style={[
+              g.btn,
+              {
+                flex: 1,
+                backgroundColor: isAnonymous ? "#0b2940" : "#ef4444",
+                borderWidth: 1,
+              },
+            ]}
             textStyle={g.btnTextDark}
-          />
-        </View>
-
-        <View style={{ marginTop: 10 }}>
-          <PrimaryButton
-            title="Opdater profil"
-            onPress={loadProfile}
-            style={[g.btn, { backgroundColor: "#111827" }]}
           />
         </View>
       </View>
 
+      {/* Stats */}
       <View style={g.statsGrid}>
         <View style={g.statCard}>
           <Text style={g.statValue}>{totalCount}</Text>
@@ -135,6 +164,7 @@ useFocusEffect(
         </View>
       </View>
 
+      {/* Seneste bookinger */}
       <View style={g.card}>
         <Text style={g.h2}>Seneste bookinger</Text>
         {recent5.length === 0 ? (
@@ -175,6 +205,7 @@ useFocusEffect(
         )}
       </View>
 
+      {/* Handling */}
       <View style={[g.rowBetween, { marginTop: 8 }]}>
         <PrimaryButton
           title="Ryd alle"

@@ -25,7 +25,14 @@ export async function ensureProfile() {
     return data;
   }
 
-  return snap.data();
+  // Hvis profilen findes men email mangler og auth har email, så sync den
+  const data = snap.data();
+  if ((!data?.email || data.email === "") && user.email) {
+    await updateDoc(ref, { email: user.email });
+    return { ...data, email: user.email };
+  }
+
+  return data;
 }
 
 export async function getMyProfile() {
@@ -42,4 +49,5 @@ export async function updateMyProfile(partial) {
 
   await updateDoc(doc(db, "profiles", user.uid), partial);
 }
+
 

@@ -318,4 +318,36 @@ export const g = StyleSheet.create({
   listSubtitle: { color: colors.textMuted, marginTop: 2 },
   listPrice: { fontWeight: '800', color: colors.text, marginLeft: 8 },
   separator: { height: 1, backgroundColor: colors.border, marginVertical: 6 },
+
+    /* Forms (Auth / inputs) */
+  input: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    color: colors.text,
+    fontSize: 16,
+  },
+  inputLabel: {
+    color: colors.textMuted,
+    fontWeight: "700",
+    marginBottom: 8,
+    marginTop: 12,
+  },
+  btnDanger: {
+    backgroundColor: colors.danger,
+  },
+  btnOutline: {
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  btnOutlineText: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: colors.text,
+  },
+
 });
